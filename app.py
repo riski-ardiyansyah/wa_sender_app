@@ -4,7 +4,6 @@ import time
 from urllib.parse import quote
 from datetime import datetime
 import os
-import random
 from io import BytesIO
 
 DEFAULT_TEMPLATE_PATH = "templates/pesan.txt"
@@ -33,8 +32,18 @@ def generate_pesan(template, data_row):
 def encode_url(nomor, pesan):
     return f"https://wa.me/{nomor}?text={quote(pesan)}"
 
-st.set_page_config(page_title="WA Sender", layout="centered")
-st.title("📤 WhatsApp Mass Sender (Link Klik Manual)")
+# Inisialisasi session state
+if "dataframe" not in st.session_state:
+    st.session_state.dataframe = None
+if "template" not in st.session_state:
+    st.session_state.template = ""
+if "index_kirim" not in st.session_state:
+    st.session_state.index_kirim = 0
+if "laporan" not in st.session_state:
+    st.session_state.laporan = []
+
+st.set_page_config(page_title="WA Sender Manual", layout="centered")
+st.title("📤 WhatsApp Sender Manual (Satu per Satu)")
 
 uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
 uploaded_template = st.file_uploader("📄 Upload template pesan (.txt)", type=["txt"])
@@ -53,51 +62,51 @@ if uploaded_file:
         st.error("Format file tidak didukung.")
         st.stop()
 
+    st.session_state.dataframe = df
     st.success(f"📄 Berhasil membaca {len(df)} kontak dari file.")
 
-    template = uploaded_template.read().decode("utf-8") if uploaded_template else load_template(DEFAULT_TEMPLATE_PATH)
+    if uploaded_template:
+        st.session_state.template = uploaded_template.read().decode("utf-8")
+    else:
+        st.session_state.template = load_template(DEFAULT_TEMPLATE_PATH)
 
     st.subheader("📝 Pratinjau Template Pesan")
-    st.code(template)
+    st.code(st.session_state.template)
 
-    if st.button("🚀 Mulai Kirim"):
-        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        laporan = []
-        progress = st.progress(0)
-        total = len(df)
+if st.session_state.dataframe is not None and st.session_state.template:
 
-        for i, row in df.iterrows():
-            nomor = str(row.get("nomor", "")).strip()
-            data_row = {k.lower(): v for k, v in row.items()}
-            pesan = generate_pesan(template, data_row)
-            media_file = str(row.get("media", "")).strip() if "media" in row else ""
-            media_note = ""
-            if media_file:
-                if os.path.exists(os.path.join(FOLDER_MEDIA, media_file)):
-                    media_note = f"[Media: {media_file}]"
-                else:
-                    media_note = f"[Media tidak ditemukan: {media_file}]"
+    df = st.session_state.dataframe
+    index = st.session_state.index_kirim
 
-            url = encode_url(nomor, pesan)
+    if index < len(df):
+        row = df.iloc[index]
+        nomor = str(row.get("nomor", "")).strip()
+        data_row = {k.lower(): v for k, v in row.items()}
+        pesan = generate_pesan(st.session_state.template, data_row)
+        url = encode_url(nomor, pesan)
 
-            st.markdown(f"📨 [{i+1}/{total}] **Kirim ke {nomor}**: [KLIK UNTUK KIRIM PESAN]({url})", unsafe_allow_html=True)
+        st.markdown(f"📨 [{index+1}/{len(df)}] **Kirim ke {nomor}**")
+        st.text_area("📋 Isi Pesan", value=pesan, height=200)
 
+        if st.button("🚀 KIRIM PESAN INI"):
             waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            laporan.append([i+1, nomor, data_row.get("nama", ""), pesan, media_file, waktu, "Tautan Dibuat"])
+            media_file = str(row.get("media", "")).strip() if "media" in row else ""
+            st.session_state.laporan.append([
+                index+1, nomor, data_row.get("nama", ""), pesan, media_file, waktu, "Tautan Dibuka"
+            ])
+            st.session_state.index_kirim += 1
+            js = f"<script>window.open('{url}', '_blank');</script>"
+            st.components.v1.html(js)
+            time.sleep(1)
+            st.experimental_rerun()
 
-            jeda = random.randint(7, 9)
-            with st.empty():
-                for detik in range(jeda, 0, -1):
-                    st.info(f"⏳ Menunggu {detik} detik sebelum kontak berikutnya...")
-                    time.sleep(1)
-
-            progress.progress((i+1) / total)
-
-        df_laporan = pd.DataFrame(laporan, columns=["No", "Nomor", "Nama", "Pesan", "Media", "Waktu", "Status"])
-        st.success("✅ Semua tautan wa.me sudah ditampilkan.")
+    else:
+        st.success("✅ Semua pesan telah ditampilkan.")
+        df_laporan = pd.DataFrame(st.session_state.laporan, columns=["No", "Nomor", "Nama", "Pesan", "Media", "Waktu", "Status"])
         st.dataframe(df_laporan)
 
         output = BytesIO()
+        now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_laporan.to_excel(writer, index=False, sheet_name="Laporan")
         st.download_button("⬇️ Download Laporan Excel", data=output.getvalue(), file_name=f"laporan_wa_{now}.xlsx")
