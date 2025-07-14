@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import time
-import webbrowser
 from urllib.parse import quote
 from datetime import datetime
 import os
@@ -35,10 +34,10 @@ def encode_url(nomor, pesan):
     return f"https://wa.me/{nomor}?text={quote(pesan)}"
 
 st.set_page_config(page_title="WA Sender", layout="centered")
-st.title("\U0001F4E4 WhatsApp Mass Sender dengan Delay Aman")
+st.title("📤 WhatsApp Mass Sender (Link Klik Manual)")
 
-uploaded_file = st.file_uploader("\U0001F4C2 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
-uploaded_template = st.file_uploader("\U0001F4DD Upload template pesan (.txt)", type=["txt"])
+uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
+uploaded_template = st.file_uploader("📄 Upload template pesan (.txt)", type=["txt"])
 st.info("Gunakan placeholder seperti `{nama}`, `{dari}`, `{produk}`, `{media}` di template.")
 
 if uploaded_file:
@@ -54,14 +53,14 @@ if uploaded_file:
         st.error("Format file tidak didukung.")
         st.stop()
 
-    st.success(f"\U0001F4C4 Berhasil membaca {len(df)} kontak dari file.")
+    st.success(f"📄 Berhasil membaca {len(df)} kontak dari file.")
 
     template = uploaded_template.read().decode("utf-8") if uploaded_template else load_template(DEFAULT_TEMPLATE_PATH)
 
-    st.subheader("\U0001F4DD Pratinjau Template Pesan")
+    st.subheader("📝 Pratinjau Template Pesan")
     st.code(template)
 
-    if st.button("\U0001F680 Mulai Kirim"):
+    if st.button("🚀 Mulai Kirim"):
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         laporan = []
         progress = st.progress(0)
@@ -80,22 +79,22 @@ if uploaded_file:
                     media_note = f"[Media tidak ditemukan: {media_file}]"
 
             url = encode_url(nomor, pesan)
-            webbrowser.open(url)
+
+            st.markdown(f"📨 [{i+1}/{total}] **Kirim ke {nomor}**: [KLIK UNTUK KIRIM PESAN]({url})", unsafe_allow_html=True)
 
             waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            laporan.append([i+1, nomor, data_row.get("nama", ""), pesan, media_file, waktu, "Dibuka"])
+            laporan.append([i+1, nomor, data_row.get("nama", ""), pesan, media_file, waktu, "Tautan Dibuat"])
 
-            st.write(f"✅ [{i+1}/{total}] Kirim ke {nomor} - tunggu sebelum lanjut...")
             jeda = random.randint(7, 9)
             with st.empty():
                 for detik in range(jeda, 0, -1):
-                    st.info(f"⏳ Menunggu {detik} detik...")
+                    st.info(f"⏳ Menunggu {detik} detik sebelum kontak berikutnya...")
                     time.sleep(1)
 
             progress.progress((i+1) / total)
 
         df_laporan = pd.DataFrame(laporan, columns=["No", "Nomor", "Nama", "Pesan", "Media", "Waktu", "Status"])
-        st.success("✅ Semua link wa.me sudah dibuka.")
+        st.success("✅ Semua tautan wa.me sudah ditampilkan.")
         st.dataframe(df_laporan)
 
         output = BytesIO()
