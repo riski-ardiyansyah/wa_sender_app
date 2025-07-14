@@ -5,6 +5,7 @@ from urllib.parse import quote
 from datetime import datetime
 import os
 from io import BytesIO
+import random
 
 DEFAULT_TEMPLATE_PATH = "templates/pesan.txt"
 DEFAULT_DARI = "tim kami"
@@ -32,7 +33,7 @@ def generate_pesan(template, data_row):
 def encode_url(nomor, pesan):
     return f"https://wa.me/{nomor}?text={quote(pesan)}"
 
-# Inisialisasi session state
+# Session state
 if "dataframe" not in st.session_state:
     st.session_state.dataframe = None
 if "template" not in st.session_state:
@@ -43,7 +44,7 @@ if "laporan" not in st.session_state:
     st.session_state.laporan = []
 
 st.set_page_config(page_title="WA Sender Manual", layout="centered")
-st.title("📤 WhatsApp Sender Manual (Satu per Satu)")
+st.title("📤 WhatsApp Sender Manual + Delay Visual")
 
 uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
 uploaded_template = st.file_uploader("📄 Upload template pesan (.txt)", type=["txt"])
@@ -94,15 +95,32 @@ if st.session_state.dataframe is not None and st.session_state.template:
             st.session_state.laporan.append([
                 index+1, nomor, data_row.get("nama", ""), pesan, media_file, waktu, "Tautan Dibuka"
             ])
-            st.session_state.index_kirim += 1
+            
+            # Tampilkan tombol & jalankan JavaScript untuk buka tautan
             js = f"<script>window.open('{url}', '_blank');</script>"
             st.components.v1.html(js)
-            time.sleep(1)
+
+            # Tampilkan jeda waktu visual
+            jeda = random.randint(7, 9)
+            st.subheader(f"⏳ Tunggu {jeda} detik untuk kontak berikutnya...")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            for detik in range(jeda):
+                percent = int((detik + 1) / jeda * 100)
+                status_text.info(f"🕐 Menunggu... {jeda - detik} detik lagi")
+                progress_bar.progress((detik + 1) / jeda)
+                time.sleep(1)
+
+            st.session_state.index_kirim += 1
             st.experimental_rerun()
 
     else:
         st.success("✅ Semua pesan telah ditampilkan.")
-        df_laporan = pd.DataFrame(st.session_state.laporan, columns=["No", "Nomor", "Nama", "Pesan", "Media", "Waktu", "Status"])
+        df_laporan = pd.DataFrame(
+            st.session_state.laporan,
+            columns=["No", "Nomor", "Nama", "Pesan", "Media", "Waktu", "Status"]
+        )
         st.dataframe(df_laporan)
 
         output = BytesIO()
