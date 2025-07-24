@@ -2,84 +2,102 @@ import streamlit as st
 import time
 import webbrowser
 import os
-from io import StringIO
-from datetime import datetime
 
-# Inisialisasi session state
-if "status_list" not in st.session_state:
-    st.session_state.status_list = []
+st.set_page_config(page_title="Pengirim WA", layout="centered")
 
-st.title("📤 Kirim Pesan WhatsApp Massal")
+# === Fungsi countdown dengan animasi UI keren ===
+def countdown(seconds):
+    for i in range(seconds, 0, -1):
+        st.markdown(f"""
+        <h2 style='text-align: center; color: #39FF14; font-size: 36px;'>
+            Mengirim pesan dalam {i} detik...
+        </h2>""", unsafe_allow_html=True)
+        time.sleep(1)
+        st.empty()
 
-uploaded_file = st.file_uploader("📄 Upload file TXT daftar nomor (format: nama - nomor)", type=["txt"])
+# === Fungsi buat laporan ===
+def buat_laporan(daftar_berhasil, daftar_gagal, nama_file):
+    semua = []
+    header = f"""LAPORAN PENGIRIMAN PESAN WA
 
-if uploaded_file:
-    # Membaca isi file dan parsing nomor
-    stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
-    lines = stringio.readlines()
-    data_nomor = []
-    for line in lines:
-        parts = line.strip().split(" - ")
-        if len(parts) == 2:
-            nama, nomor = parts
-            data_nomor.append({"nama": nama.strip(), "nomor": nomor.strip()})
+Jumlah pesan sukses = {len(daftar_berhasil)}
+Jumlah pesan gagal  = {len(daftar_gagal)}
 
-    pesan_template = st.text_area("✏️ Tulis pesan yang ingin dikirim (gunakan {{nama}} untuk nama)", "Halo {{nama}}, ini adalah pesan percobaan.")
+==============================\n"""
 
-    if st.button("🚀 Klik untuk Kirim WA"):
-        st.session_state.status_list = []  # Reset status sebelumnya
-        progress_bar = st.progress(0)
-        total = len(data_nomor)
+    for nomor, nama in daftar_berhasil:
+        semua.append(f"[SUKSES] {nomor} - {nama}")
 
-        for i, data in enumerate(data_nomor):
-            nama = data["nama"]
-            nomor = data["nomor"]
-            pesan = pesan_template.replace("{{nama}}", nama)
+    for nomor, nama in daftar_gagal:
+        semua.append(f"[GAGAL]  {nomor} - {nama}")
 
-            encoded_pesan = pesan.replace(" ", "%20").replace("\n", "%0A")
-            url = f"https://wa.me/{nomor}?text={encoded_pesan}"
+    isi_laporan = header + "\n".join(semua)
 
-            with st.container():
-                st.markdown(f"### 📲 Mengirim ke: {nama} - {nomor}")
-                with st.empty():
-                    for detik in range(7, 0, -1):
-                        st.markdown(f"<h2 style='text-align:center; color:#4CAF50;'>⏳ Kirim dalam {detik} detik...</h2>", unsafe_allow_html=True)
-                        time.sleep(1)
+    # File gabungan
+    file_laporan = f"laporan_{nama_file}.txt"
+    with open(file_laporan, "w", encoding="utf-8") as f:
+        f.write(isi_laporan)
 
-            webbrowser.open_new_tab(url)
+    # File khusus gagal
+    file_gagal = f"nomorgagal_{nama_file}.txt"
+    with open(file_gagal, "w", encoding="utf-8") as f:
+        for nomor, nama in daftar_gagal:
+            f.write(f"{nomor} - {nama}\n")
 
-            st.session_state.status_list.append({"nama": nama, "nomor": nomor, "status": None})
-            progress_bar.progress((i + 1) / total)
+    return file_laporan, file_gagal
 
-        st.success("✅ Semua link WA telah dibuka. Setelah mengirim semua pesan, kembali dan tandai statusnya di bawah.")
+# === Upload dan ambil data nomor ===
+st.title("📤 Kirim Pesan WA Masal dengan Countdown dan Laporan")
 
-    if st.session_state.status_list:
+uploaded_file = st.file_uploader("Upload file TXT berisi daftar nomor (format: 628xx|Nama)", type="txt")
+template_list = os.listdir("template") if os.path.exists("template") else []
+
+template_selected = st.selectbox("Pilih Template Pesan", template_list)
+
+if uploaded_file and template_selected:
+    nama_file_txt = uploaded_file.name.replace(".txt", "")
+    data = uploaded_file.read().decode("utf-8").splitlines()
+    daftar_nomor = [baris.split("|") for baris in data if "|" in baris]
+
+    with open(f"template/{template_selected}", "r", encoding="utf-8") as f:
+        template = f.read()
+
+    if st.button("Klik untuk Kirim WA"):
         st.markdown("---")
-        st.header("📋 Laporan Status Pengiriman")
-        for i, data in enumerate(st.session_state.status_list):
-            col1, col2, col3 = st.columns([3, 2, 2])
-            with col1:
-                st.text(f"{data['nama']} - {data['nomor']}")
-            with col2:
-                if st.button(f"✅ Berhasil", key=f"sukses_{i}"):
-                    st.session_state.status_list[i]["status"] = "BERHASIL"
-            with col3:
-                if st.button(f"❌ Gagal", key=f"gagal_{i}"):
-                    st.session_state.status_list[i]["status"] = "GAGAL"
+        berhasil, gagal = [], []
 
-        if st.button("📥 Unduh Laporan TXT"):
-            sukses = [x for x in st.session_state.status_list if x["status"] == "BERHASIL"]
-            gagal = [x for x in st.session_state.status_list if x["status"] == "GAGAL"]
+        progress_text = "📤 Mengirim pesan ke semua nomor..."
+        my_bar = st.progress(0, text=progress_text)
 
-            laporan = []
-            laporan.append(f"Jumlah pesan sukses = {len(sukses)}")
-            laporan.append(f"Jumlah pesan gagal = {len(gagal)}")
-            laporan.append("")
-            for x in sukses:
-                laporan.append(f"{x['nomor']} - {x['nama']} - BERHASIL")
-            for x in gagal:
-                laporan.append(f"{x['nomor']} - {x['nama']} - GAGAL")
+        for i, (nomor, nama) in enumerate(daftar_nomor):
+            persen = (i + 1) / len(daftar_nomor)
+            my_bar.progress(persen, text=f"📨 Mengirim ke {nama} ({nomor}) ({i+1}/{len(daftar_nomor)})")
 
-            nama_file = uploaded_file.name.replace(".txt", "")
-            final_text = "\n".join(laporan)
-            st.download_button("⬇️ Download Laporan", data=final_text, file_name=f"laporan_{nama_file}.txt", mime="text/plain")
+            pesan = template.replace("[[nama]]", nama)
+            url = f"https://wa.me/{nomor}?text={pesan}"
+            countdown(7)
+            webbrowser.open(url)
+
+            status = st.radio(
+                f"Apakah pesan ke {nama} ({nomor}) terkirim?",
+                ["Belum Dipilih", "Berhasil", "Gagal"],
+                key=f"status_{i}"
+            )
+
+            if status == "Berhasil":
+                berhasil.append((nomor, nama))
+            elif status == "Gagal":
+                gagal.append((nomor, nama))
+
+            st.markdown("---")
+
+        st.success("✅ Pengiriman selesai!")
+
+        # Buat laporan
+        file_laporan, file_gagal = buat_laporan(berhasil, gagal, nama_file_txt)
+
+        with open(file_laporan, "rb") as f:
+            st.download_button("📥 Download Laporan Semua", f, file_name=file_laporan)
+
+        with open(file_gagal, "rb") as f:
+            st.download_button("📥 Download Nomor Gagal", f, file_name=file_gagal)
