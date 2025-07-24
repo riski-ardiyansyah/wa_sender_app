@@ -13,7 +13,7 @@ st.title("📤 Kirim WhatsApp Massal")
 uploaded_file = st.file_uploader("Upload file TXT (format: nama[TAB]nomor)", type=["txt"])
 
 # Step 2: Pilih template pesan
-template_folder = "template"
+template_folder = "templates"
 template_files = [f for f in os.listdir(template_folder) if f.endswith(".txt")]
 template_choice = st.selectbox("Pilih Template Pesan", template_files)
 
