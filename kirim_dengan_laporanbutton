@@ -1,0 +1,142 @@
+import streamlit as st
+import pandas as pd
+import time
+import os
+from urllib.parse import quote
+from datetime import datetime
+
+DEFAULT_TEMPLATE_PATH = "templates/pesan.txt"
+DEFAULT_DARI = "Admin"
+DEFAULT_PRODUK = "Produk Kami"
+
+def load_template(file_path):
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except:
+        return ""
+
+def generate_pesan(template, data_row):
+    pesan = template
+    for key, val in data_row.items():
+        val = str(val) if val else "-"
+        if key == "dari" and not val.strip():
+            val = DEFAULT_DARI
+        if key == "produk" and not val.strip():
+            val = DEFAULT_PRODUK
+        pesan = pesan.replace("{" + key + "}", val)
+    return pesan
+
+def encode_url(nomor, pesan):
+    return f"https://wa.me/{nomor}?text={quote(pesan)}"
+
+def tampilkan_countdown(seconds):
+    countdown_placeholder = st.empty()
+    for s in range(seconds, 0, -1):
+        countdown_placeholder.markdown(
+            f"""
+            <div style="font-size:36px; font-weight:bold; text-align:center; color:#2c3e50;">
+                ⏳ Menunggu {s} detik untuk pesan berikutnya...
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        time.sleep(1)
+    countdown_placeholder.empty()
+
+# Inisialisasi state
+if "dataframe" not in st.session_state:
+    st.session_state.dataframe = None
+if "template" not in st.session_state:
+    st.session_state.template = ""
+if "index_kirim" not in st.session_state:
+    st.session_state.index_kirim = 0
+if "laporan" not in st.session_state:
+    st.session_state.laporan = []
+if "gagal" not in st.session_state:
+    st.session_state.gagal = []
+
+st.set_page_config(page_title="WA Sender Manual", layout="centered")
+st.title("📤 WhatsApp Sender Manual + Delay Visual")
+
+uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
+uploaded_template = st.file_uploader("📄 Upload template pesan (.txt)", type=["txt"])
+st.info("Gunakan placeholder seperti `{nama}`, `{dari}`, `{produk}` di template.")
+
+if uploaded_file:
+    file_ext = os.path.splitext(uploaded_file.name)[-1].lower()
+
+    if file_ext == ".xlsx":
+        df = pd.read_excel(uploaded_file)
+    elif file_ext == ".txt":
+        lines = uploaded_file.read().decode("utf-8").splitlines()
+        data = [line.strip().split("\t") for line in lines if "\t" in line]
+        df = pd.DataFrame(data, columns=["nama", "nomor"])
+    else:
+        st.error("Format file tidak didukung.")
+        st.stop()
+
+    st.session_state.dataframe = df
+    st.success(f"📄 Berhasil membaca {len(df)} kontak dari file.")
+
+    if uploaded_template:
+        st.session_state.template = uploaded_template.read().decode("utf-8")
+    else:
+        st.session_state.template = load_template(DEFAULT_TEMPLATE_PATH)
+
+    st.subheader("📝 Pratinjau Template Pesan")
+    st.code(st.session_state.template)
+
+    if st.button("🚀 Mulai Kirim Manual"):
+        st.session_state.index_kirim = 0
+        st.session_state.laporan = []
+        st.session_state.gagal = []
+
+    if st.session_state.index_kirim < len(df):
+        current = df.iloc[st.session_state.index_kirim]
+        pesan = generate_pesan(st.session_state.template, current)
+        url = encode_url(current["nomor"], pesan)
+
+        st.markdown(f"### ✅ Kirim ke: {current['nama']} ({current['nomor']})")
+        st.text_area("📨 Isi Pesan", pesan, height=150)
+        st.markdown(f"[🌐 Klik untuk kirim WA](%s)" % url)
+
+        if st.button("✅ Sudah Terkirim, Lanjutkan"):
+            st.session_state.laporan.append({
+                "nama": current["nama"],
+                "nomor": current["nomor"],
+                "status": "Sukses",
+                "pesan": pesan
+            })
+            st.session_state.index_kirim += 1
+            tampilkan_countdown(7)
+
+        if st.button("❌ Lewati (Gagal)"):
+            st.session_state.gagal.append(current["nomor"])
+            st.session_state.index_kirim += 1
+            tampilkan_countdown(7)
+    else:
+        st.success("🎉 Semua pesan sudah selesai dikirim!")
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = os.path.splitext(uploaded_file.name)[0]
+
+        if st.session_state.laporan:
+            df_laporan = pd.DataFrame(st.session_state.laporan)
+            laporan_txt = "\n".join(
+                f"{row['nama']}\t{row['nomor']}\t{row['status']}" for _, row in df_laporan.iterrows()
+            )
+            st.download_button(
+                "📥 Unduh Laporan (TXT)",
+                laporan_txt,
+                file_name=f"laporan_{base_name}_{now}.txt",
+                mime="text/plain"
+            )
+
+        if st.session_state.gagal:
+            gagal_txt = "\n".join(st.session_state.gagal)
+            st.download_button(
+                "📥 Unduh Nomor Gagal (TXT)",
+                gagal_txt,
+                file_name=f"nomorgagal_{base_name}_{now}.txt",
+                mime="text/plain"
+            )
