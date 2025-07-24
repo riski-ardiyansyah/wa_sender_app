@@ -13,7 +13,7 @@ def load_template_files():
     return [f for f in os.listdir(folder) if f.endswith('.txt')]
 
 def read_template(file_name):
-    with open(os.path.join("template", file_name), "r", encoding="utf-8") as f:
+    with open(os.path.join("templates", file_name), "r", encoding="utf-8") as f:
         return f.read()
 
 def read_numbers(file_path):
