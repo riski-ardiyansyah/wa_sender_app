@@ -80,7 +80,11 @@ if uploaded_file:
     elif file_ext == ".txt":
         lines = uploaded_file.read().decode("utf-8").splitlines()
         data = [line.strip().split("\t") for line in lines if "\t" in line]
-        df = pd.DataFrame(data, columns=["nama", "nomor"])
+        try:
+            df = pd.DataFrame(data, columns=["nama", "nomor"])
+        except Exception as e:
+            st.error(f"Gagal membaca file TXT: {e}")
+            st.stop()
     else:
         st.error("Format file tidak didukung.")
         st.stop()
@@ -112,6 +116,11 @@ if uploaded_file:
         st.markdown(f"### ✅ Kirim ke: {current['nama']} ({current['nomor']})")
         st.text_area("📨 Isi Pesan", pesan, height=150)
         st.markdown(f"[🌐 Klik untuk kirim WA]({url})")
+
+        # Tampilkan waktu berjalan di atas progress
+        waktu_berjalan = time.time() - st.session_state.waktu_mulai if st.session_state.waktu_mulai else 0
+        waktu_str = time.strftime("%H:%M:%S", time.gmtime(waktu_berjalan))
+        st.markdown(f"⏱ Waktu berjalan: **{waktu_str}**")
 
         st.markdown(f"#### ⏱️ Progres Pengiriman: {i+1}/{len(df)}")
         st.progress((i + 1) / len(df))
