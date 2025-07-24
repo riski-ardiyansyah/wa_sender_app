@@ -34,7 +34,6 @@ def tampilkan_countup(seconds):
     countdown_placeholder = st.empty()
     progress = st.progress(0)
     for i in range(seconds):
-        percent = int((i + 1) / seconds * 100)
         countdown_placeholder.markdown(
             f"""
             <div style='text-align:center;'>
@@ -138,31 +137,36 @@ if uploaded_file:
 
     else:
         st.success("🎉 Semua pesan telah selesai dikirim!")
-        df_lap = pd.DataFrame(st.session_state.laporan)
-        df_sukses = df_lap[df_lap["status"] == "sukses"]
-        df_gagal = df_lap[df_lap["status"] == "gagal"]
-        df_final = pd.concat([df_sukses, df_gagal])
 
-        jumlah_sukses = len(df_sukses)
-        jumlah_gagal = len(df_gagal)
+        if st.session_state.laporan:
+            df_lap = pd.DataFrame(st.session_state.laporan)
 
-        waktu_berjalan = time.time() - st.session_state.start_time if st.session_state.start_time else 0
-        menit = int(waktu_berjalan // 60)
-        detik = int(waktu_berjalan % 60)
-        waktu_format = f"{menit} menit {detik} detik"
+            df_sukses = df_lap[df_lap.get("status") == "sukses"] if "status" in df_lap else pd.DataFrame()
+            df_gagal = df_lap[df_lap.get("status") == "gagal"] if "status" in df_lap else pd.DataFrame()
+            df_final = pd.concat([df_sukses, df_gagal])
 
-        header = f"Jumlah pesan sukses = {jumlah_sukses}\nJumlah pesan gagal = {jumlah_gagal}\nTotal waktu berjalan = {waktu_format}\n\n"
-        isi = "\n".join([f"{r['nomor']} - {r['nama']} - {r['status']}" for _, r in df_final.iterrows()])
-        laporan_txt = header + isi
+            jumlah_sukses = len(df_sukses)
+            jumlah_gagal = len(df_gagal)
 
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = os.path.splitext(uploaded_file.name)[0]
+            waktu_berjalan = time.time() - st.session_state.start_time if st.session_state.start_time else 0
+            menit = int(waktu_berjalan // 60)
+            detik = int(waktu_berjalan % 60)
+            waktu_format = f"{menit} menit {detik} detik"
 
-        st.markdown(f"🕒 **Total waktu berjalan:** {waktu_format}")
+            header = f"Jumlah pesan sukses = {jumlah_sukses}\nJumlah pesan gagal = {jumlah_gagal}\nTotal waktu berjalan = {waktu_format}\n\n"
+            isi = "\n".join([f"{r['nomor']} - {r['nama']} - {r['status']}" for _, r in df_final.iterrows()])
+            laporan_txt = header + isi
 
-        st.download_button(
-            "📥 Unduh Laporan Akhir (TXT)",
-            laporan_txt,
-            file_name=f"laporan_{base_name}_{now}.txt",
-            mime="text/plain"
-        )
+            now = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_name = os.path.splitext(uploaded_file.name)[0]
+
+            st.markdown(f"🕒 **Total waktu berjalan:** {waktu_format}")
+
+            st.download_button(
+                "📥 Unduh Laporan Akhir (TXT)",
+                laporan_txt,
+                file_name=f"laporan_{base_name}_{now}.txt",
+                mime="text/plain"
+            )
+        else:
+            st.warning("⚠️ Belum ada data pengiriman yang diproses. Tekan tombol kirim terlebih dahulu.")
