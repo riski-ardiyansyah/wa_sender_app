@@ -1,151 +1,85 @@
 import streamlit as st
-import pandas as pd
 import time
+import webbrowser
 import os
-from urllib.parse import quote
+from io import StringIO
 from datetime import datetime
 
-DEFAULT_TEMPLATE_PATH = "templates/pesan.txt"
-DEFAULT_DARI = "Admin"
-DEFAULT_PRODUK = "Produk Kami"
+# Inisialisasi session state
+if "status_list" not in st.session_state:
+    st.session_state.status_list = []
 
-def load_template(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except:
-        return ""
+st.title("📤 Kirim Pesan WhatsApp Massal")
 
-def generate_pesan(template, data_row):
-    pesan = template
-    for key, val in data_row.items():
-        val = str(val) if val else "-"
-        if key == "dari" and not val.strip():
-            val = DEFAULT_DARI
-        if key == "produk" and not val.strip():
-            val = DEFAULT_PRODUK
-        pesan = pesan.replace("{" + key + "}", val)
-    return pesan
-
-def encode_url(nomor, pesan):
-    return f"https://wa.me/{nomor}?text={quote(pesan)}"
-
-def tampilkan_countdown(seconds):
-    countdown_placeholder = st.empty()
-    progress = st.progress(0)
-    for i in range(seconds):
-        percent = int((i + 1) / seconds * 100)
-        countdown_placeholder.markdown(
-            f"""
-            <div style='text-align:center;'>
-                <h2 style='color:#27ae60;'>⏳ Menunggu {seconds - i} detik...</h2>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        progress.progress((i + 1) / seconds)
-        time.sleep(1)
-    countdown_placeholder.empty()
-    progress.empty()
-
-# Inisialisasi state
-if "dataframe" not in st.session_state:
-    st.session_state.dataframe = None
-if "template" not in st.session_state:
-    st.session_state.template = ""
-if "index_kirim" not in st.session_state:
-    st.session_state.index_kirim = 0
-if "laporan" not in st.session_state:
-    st.session_state.laporan = []
-
-st.set_page_config(page_title="WA Sender Manual", layout="centered")
-st.title("📤 WhatsApp Sender Manual + Countdown Visual")
-
-uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
-uploaded_template = st.file_uploader("📄 Upload template pesan (.txt)", type=["txt"])
-st.info("Gunakan placeholder seperti `{nama}`, `{dari}`, `{produk}` di template.")
+uploaded_file = st.file_uploader("📄 Upload file TXT daftar nomor (format: nama - nomor)", type=["txt"])
 
 if uploaded_file:
-    file_ext = os.path.splitext(uploaded_file.name)[-1].lower()
+    # Membaca isi file dan parsing nomor
+    stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
+    lines = stringio.readlines()
+    data_nomor = []
+    for line in lines:
+        parts = line.strip().split(" - ")
+        if len(parts) == 2:
+            nama, nomor = parts
+            data_nomor.append({"nama": nama.strip(), "nomor": nomor.strip()})
 
-    if file_ext == ".xlsx":
-        df = pd.read_excel(uploaded_file)
-    elif file_ext == ".txt":
-        lines = uploaded_file.read().decode("utf-8").splitlines()
-        data = [line.strip().split("\t") for line in lines if "\t" in line]
-        df = pd.DataFrame(data, columns=["nama", "nomor"])
-    else:
-        st.error("Format file tidak didukung.")
-        st.stop()
+    pesan_template = st.text_area("✏️ Tulis pesan yang ingin dikirim (gunakan {{nama}} untuk nama)", "Halo {{nama}}, ini adalah pesan percobaan.")
 
-    st.session_state.dataframe = df
-    st.success(f"📄 Berhasil membaca {len(df)} kontak dari file.")
+    if st.button("🚀 Klik untuk Kirim WA"):
+        st.session_state.status_list = []  # Reset status sebelumnya
+        progress_bar = st.progress(0)
+        total = len(data_nomor)
 
-    if uploaded_template:
-        st.session_state.template = uploaded_template.read().decode("utf-8")
-    else:
-        st.session_state.template = load_template(DEFAULT_TEMPLATE_PATH)
+        for i, data in enumerate(data_nomor):
+            nama = data["nama"]
+            nomor = data["nomor"]
+            pesan = pesan_template.replace("{{nama}}", nama)
 
-    st.subheader("📝 Pratinjau Template Pesan")
-    st.code(st.session_state.template)
+            encoded_pesan = pesan.replace(" ", "%20").replace("\n", "%0A")
+            url = f"https://wa.me/{nomor}?text={encoded_pesan}"
 
-    if st.button("🚀 Mulai Kirim Manual"):
-        st.session_state.index_kirim = 0
-        st.session_state.laporan = []
+            with st.container():
+                st.markdown(f"### 📲 Mengirim ke: {nama} - {nomor}")
+                with st.empty():
+                    for detik in range(7, 0, -1):
+                        st.markdown(f"<h2 style='text-align:center; color:#4CAF50;'>⏳ Kirim dalam {detik} detik...</h2>", unsafe_allow_html=True)
+                        time.sleep(1)
 
-    if st.session_state.index_kirim < len(df):
-        i = st.session_state.index_kirim
-        current = df.iloc[i]
-        pesan = generate_pesan(st.session_state.template, current)
-        url = encode_url(current["nomor"], pesan)
+            webbrowser.open_new_tab(url)
 
-        st.markdown(f"### ✅ Kirim ke: {current['nama']} ({current['nomor']})")
-        st.text_area("📨 Isi Pesan", pesan, height=150)
-        st.markdown(f"[🌐 Klik untuk kirim WA]({url})")
+            st.session_state.status_list.append({"nama": nama, "nomor": nomor, "status": None})
+            progress_bar.progress((i + 1) / total)
 
-        st.markdown(f"#### ⏱️ Progres Pengiriman: {i+1}/{len(df)}")
-        st.progress((i + 1) / len(df))
+        st.success("✅ Semua link WA telah dibuka. Setelah mengirim semua pesan, kembali dan tandai statusnya di bawah.")
 
-        if st.button("✅ Sudah Terkirim, Lanjutkan"):
-            st.session_state.laporan.append({
-                "nama": current["nama"],
-                "nomor": current["nomor"],
-                "status": "sukses",
-                "pesan": pesan
-            })
-            st.session_state.index_kirim += 1
-            tampilkan_countdown(7)
+    if st.session_state.status_list:
+        st.markdown("---")
+        st.header("📋 Laporan Status Pengiriman")
+        for i, data in enumerate(st.session_state.status_list):
+            col1, col2, col3 = st.columns([3, 2, 2])
+            with col1:
+                st.text(f"{data['nama']} - {data['nomor']}")
+            with col2:
+                if st.button(f"✅ Berhasil", key=f"sukses_{i}"):
+                    st.session_state.status_list[i]["status"] = "BERHASIL"
+            with col3:
+                if st.button(f"❌ Gagal", key=f"gagal_{i}"):
+                    st.session_state.status_list[i]["status"] = "GAGAL"
 
-        if st.button("❌ Gagal Terkirim"):
-            st.session_state.laporan.append({
-                "nama": current["nama"],
-                "nomor": current["nomor"],
-                "status": "gagal",
-                "pesan": pesan
-            })
-            st.session_state.index_kirim += 1
-            tampilkan_countdown(7)
+        if st.button("📥 Unduh Laporan TXT"):
+            sukses = [x for x in st.session_state.status_list if x["status"] == "BERHASIL"]
+            gagal = [x for x in st.session_state.status_list if x["status"] == "GAGAL"]
 
-    else:
-        st.success("🎉 Semua pesan telah selesai dikirim!")
-        df_lap = pd.DataFrame(st.session_state.laporan)
-        df_sukses = df_lap[df_lap["status"] == "sukses"]
-        df_gagal = df_lap[df_lap["status"] == "gagal"]
-        df_final = pd.concat([df_sukses, df_gagal])
+            laporan = []
+            laporan.append(f"Jumlah pesan sukses = {len(sukses)}")
+            laporan.append(f"Jumlah pesan gagal = {len(gagal)}")
+            laporan.append("")
+            for x in sukses:
+                laporan.append(f"{x['nomor']} - {x['nama']} - BERHASIL")
+            for x in gagal:
+                laporan.append(f"{x['nomor']} - {x['nama']} - GAGAL")
 
-        jumlah_sukses = len(df_sukses)
-        jumlah_gagal = len(df_gagal)
-
-        header = f"Jumlah pesan sukses = {jumlah_sukses}\nJumlah pesan gagal = {jumlah_gagal}\n\n"
-        isi = "\n".join([f"{r['nomor']} - {r['nama']} - {r['status']}" for _, r in df_final.iterrows()])
-        laporan_txt = header + isi
-
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = os.path.splitext(uploaded_file.name)[0]
-
-        st.download_button(
-            "📥 Unduh Laporan Akhir (TXT)",
-            laporan_txt,
-            file_name=f"laporan_{base_name}_{now}.txt",
-            mime="text/plain"
-        )
+            nama_file = uploaded_file.name.replace(".txt", "")
+            final_text = "\n".join(laporan)
+            st.download_button("⬇️ Download Laporan", data=final_text, file_name=f"laporan_{nama_file}.txt", mime="text/plain")
