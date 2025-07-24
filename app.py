@@ -1,110 +1,108 @@
-import os
 import streamlit as st
-import pandas as pd
 import time
+import os
 from urllib.parse import quote
-from datetime import datetime
 
-TEMPLATE_FOLDER = "templates"
-DEFAULT_PRODUK = "Produk Kami"
-DEFAULT_DARI = "Admin"
+# Folder template
+TEMPLATE_FOLDER = "template"
 
-def load_template(file_path):
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except:
-        return ""
+# Pilih file template
+template_files = os.listdir(TEMPLATE_FOLDER)
+selected_template = st.selectbox("📄 Pilih Template Pesan", template_files)
 
-def generate_pesan(template, data_row):
-    pesan = template
-    for key, val in data_row.items():
-        val = str(val) if val else "-"
-        if key == "dari" and not val.strip():
-            val = DEFAULT_DARI
-        if key == "produk" and not val.strip():
-            val = DEFAULT_PRODUK
-        pesan = pesan.replace("{" + key + "}", val)
-    return pesan
+# Ambil isi template
+with open(os.path.join(TEMPLATE_FOLDER, selected_template), "r", encoding="utf-8") as f:
+    pesan_template = f.read()
 
-def encode_url(nomor, pesan):
-    return f"https://wa.me/{nomor}?text={quote(pesan)}"
+# Upload file nomor
+uploaded_file = st.file_uploader("📤 Upload File Nomor", type=["txt"])
 
-def tulis_laporan(nama_file, laporan):
-    sukses = [l for l in laporan if l["status"] == "BERHASIL"]
-    gagal = [l for l in laporan if l["status"] == "GAGAL"]
-    with open(nama_file, "w", encoding="utf-8") as f:
-        f.write(f"Jumlah Pesan Sukses: {len(sukses)}\n")
-        f.write(f"Jumlah Pesan Gagal: {len(gagal)}\n\n")
-        for data in sukses + gagal:
-            f.write(f"{data['status']}\t{data['nama']}\t{data['nomor']}\n")
+# Inisialisasi session
+if "nomor_list" not in st.session_state:
+    st.session_state.nomor_list = []
+if "laporan" not in st.session_state:
+    st.session_state.laporan = {"sukses": [], "gagal": []}
+if "current_index" not in st.session_state:
+    st.session_state.current_index = 0
+if "mulai_kirim" not in st.session_state:
+    st.session_state.mulai_kirim = False
 
-# Streamlit
-st.set_page_config(page_title="WA Sender Manual", layout="centered")
-st.title("📤 WhatsApp Sender Manual + Delay Visual")
-
-# Step 1: Upload file kontak
-uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
-
-# Step 2: Pilih template dari folder
-template_files = [f for f in os.listdir(TEMPLATE_FOLDER) if f.endswith(".txt")]
-selected_template_file = st.selectbox("📄 Pilih template pesan", template_files)
-
-# Tampilkan isi template
-template_path = os.path.join(TEMPLATE_FOLDER, selected_template_file)
-template_content = load_template(template_path)
-st.subheader("📝 Pratinjau Template Pesan")
-st.code(template_content)
-
-# Load data kontak
+# Jika file diupload
 if uploaded_file:
-    file_ext = os.path.splitext(uploaded_file.name)[-1].lower()
-    if file_ext == ".xlsx":
-        df = pd.read_excel(uploaded_file)
-    elif file_ext == ".txt":
-        lines = uploaded_file.read().decode("utf-8").splitlines()
-        data = [line.strip().split("\t") for line in lines if "\t" in line]
-        df = pd.DataFrame(data, columns=["nama", "nomor"])
-    else:
-        st.error("Format file tidak didukung.")
-        st.stop()
+    content = uploaded_file.read().decode("utf-8")
+    st.session_state.nomor_list = [line.strip() for line in content.splitlines() if line.strip()]
+    st.success(f"{len(st.session_state.nomor_list)} nomor berhasil dimuat.")
 
-    if st.button("📨 Klik untuk Kirim WhatsApp"):
-        st.subheader("⏳ Countdown Mulai...")
-        countdown = st.empty()
-        for i in range(5, 0, -1):
-            countdown.markdown(f"<h3 style='text-align:center;'>Mengirim dalam {i} detik...</h3>", unsafe_allow_html=True)
-            time.sleep(1)
-        countdown.markdown("<h3 style='text-align:center;'>Memulai pengiriman!</h3>", unsafe_allow_html=True)
+# Tombol kirim WA
+if st.button("📨 Klik untuk Kirim WA") and st.session_state.nomor_list:
+    st.session_state.mulai_kirim = True
+    st.session_state.laporan = {"sukses": [], "gagal": []}
+    st.session_state.current_index = 0
 
-        laporan = []
-        progress_bar = st.progress(0)
-        status_info = st.empty()
+# Mulai proses pengiriman
+if st.session_state.mulai_kirim:
+    nomor_list = st.session_state.nomor_list
+    with st.container():
+        progress = st.progress(0)
+        for idx in range(st.session_state.current_index, len(nomor_list)):
+            nomor = nomor_list[idx]
+            pesan = pesan_template.replace("[[fullname]]", f"User{idx+1}")
+            encoded_pesan = quote(pesan)
+            wa_link = f"https://wa.me/{nomor}?text={encoded_pesan}"
+            
+            st.subheader(f"📱 Mengirim pesan ke nomor {idx+1}/{len(nomor_list)}")
+            with st.empty():
+                for sisa in range(7, 0, -1):
+                    st.markdown(f"<h2 style='text-align:center;color:green;'>⏳ Mengalihkan ke WhatsApp dalam {sisa} detik...</h2>", unsafe_allow_html=True)
+                    time.sleep(1)
 
-        for i, row in df.iterrows():
-            nomor = str(row["nomor"]).replace("+", "").replace(" ", "").replace("-", "")
-            nama = row["nama"]
-            pesan = generate_pesan(template_content, row)
-            url = encode_url(nomor, pesan)
+            js = f"window.open('{wa_link}')"
+            st.components.v1.html(f"<script>{js}</script>", height=0)
 
-            status_info.write(f"📨 Mengirim pesan ke nomor {i+1} / {len(df)}: {nomor}")
+            st.session_state.current_index = idx + 1
+            progress.progress((idx + 1) / len(nomor_list))
+            st.stop()  # Tunggu hingga user kembali
 
-            try:
-                js = f"window.open('{url}')"  # buka di tab baru
-                st.components.v1.html(f"<script>{js}</script>", height=0)
-                laporan.append({"status": "BERHASIL", "nama": nama, "nomor": nomor})
-            except:
-                laporan.append({"status": "GAGAL", "nama": nama, "nomor": nomor})
+# Setelah kembali dari WhatsApp
+if st.session_state.mulai_kirim and st.session_state.current_index > 0:
+    nomor_terakhir = st.session_state.nomor_list[st.session_state.current_index - 1]
 
-            time.sleep(3)  # delay antar pesan
-            progress_bar.progress((i+1)/len(df))
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Berhasil Terkirim"):
+            st.session_state.laporan["sukses"].append(nomor_terakhir)
+            st.rerun()
+    with col2:
+        if st.button("❌ Gagal Terkirim"):
+            st.session_state.laporan["gagal"].append(nomor_terakhir)
+            st.rerun()
 
-        st.success("✅ Pengiriman selesai!")
+# Tombol unduh laporan
+if st.session_state.current_index == len(st.session_state.nomor_list):
+    total_sukses = len(st.session_state.laporan["sukses"])
+    total_gagal = len(st.session_state.laporan["gagal"])
+    semua_data = st.session_state.laporan["sukses"] + st.session_state.laporan["gagal"]
+    keterangan = f"Total sukses: {total_sukses}\nTotal gagal: {total_gagal}\n\n"
 
-        if st.button("📋 Simpan Laporan"):
-            os.makedirs("laporan", exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            laporan_file = os.path.join("laporan", f"laporan_{timestamp}.txt")
-            tulis_laporan(laporan_file, laporan)
-            st.success(f"Laporan disimpan ke: `{laporan_file}`")
+    isi_laporan = keterangan
+    for nomor in st.session_state.laporan["sukses"]:
+        isi_laporan += f"{nomor} - SUKSES\n"
+    for nomor in st.session_state.laporan["gagal"]:
+        isi_laporan += f"{nomor} - GAGAL\n"
 
+    # Buat file laporan
+    base_name = os.path.splitext(uploaded_file.name)[0]
+    laporan_name = f"laporan_{base_name}.txt"
+    gagal_name = f"nomorgagal_{base_name}.txt"
+
+    with open(laporan_name, "w", encoding="utf-8") as f:
+        f.write(isi_laporan)
+    with open(gagal_name, "w", encoding="utf-8") as f:
+        for nomor in st.session_state.laporan["gagal"]:
+            f.write(f"{nomor}\n")
+
+    with open(laporan_name, "rb") as f:
+        st.download_button("⬇️ Unduh Laporan", f, file_name=laporan_name)
+
+    with open(gagal_name, "rb") as f:
+        st.download_button("⬇️ Unduh Nomor Gagal", f, file_name=gagal_name)
