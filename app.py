@@ -1,179 +1,97 @@
 import streamlit as st
 import pandas as pd
 import time
+import urllib.parse
 import os
-from urllib.parse import quote
 from datetime import datetime
+from io import BytesIO
 
-DEFAULT_TEMPLATE_PATH = "templates/pesan.txt"
-DEFAULT_DARI = "Admin"
-DEFAULT_PRODUK = "Produk Kami"
+st.set_page_config(page_title="Kirim WhatsApp Massal", layout="wide")
+st.title("📤 Kirim WhatsApp Massal")
 
-def load_template(file_path):
+# Step 1: Pilih file data
+uploaded_file = st.file_uploader("Upload file TXT (format: nama[TAB]nomor)", type=["txt"])
+
+# Step 2: Pilih template pesan
+template_folder = "template"
+template_files = [f for f in os.listdir(template_folder) if f.endswith(".txt")]
+template_choice = st.selectbox("Pilih Template Pesan", template_files)
+
+# Step 3: Baca pesan template
+template_path = os.path.join(template_folder, template_choice)
+with open(template_path, "r", encoding="utf-8") as f:
+    template_pesan = f.read()
+
+# Step 4: Baca data dari file TXT
+if uploaded_file and template_choice:
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except:
-        return ""
-
-def generate_pesan(template, data_row):
-    pesan = template
-    for key, val in data_row.items():
-        val = str(val) if val else "-"
-        if key == "dari" and not val.strip():
-            val = DEFAULT_DARI
-        if key == "produk" and not val.strip():
-            val = DEFAULT_PRODUK
-        pesan = pesan.replace("{" + key + "}", val)
-    return pesan
-
-def encode_url(nomor, pesan):
-    return f"https://wa.me/{nomor}?text={quote(pesan)}"
-
-def tampilkan_countdown(seconds):
-    countdown_placeholder = st.empty()
-    progress = st.progress(0)
-    for i in range(seconds):
-        percent = int((i + 1) / seconds * 100)
-        countdown_placeholder.markdown(
-            f"""
-            <div style='text-align:center;'>
-                <h2 style='color:#27ae60;'>⏳ Menunggu {seconds - i} detik...</h2>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        progress.progress((i + 1) / seconds)
-        time.sleep(1)
-    countdown_placeholder.empty()
-    progress.empty()
-
-# Inisialisasi state
-if "dataframe" not in st.session_state:
-    st.session_state.dataframe = None
-if "template" not in st.session_state:
-    st.session_state.template = ""
-if "index_kirim" not in st.session_state:
-    st.session_state.index_kirim = 0
-if "laporan" not in st.session_state:
-    st.session_state.laporan = []
-if "waktu_mulai" not in st.session_state:
-    st.session_state.waktu_mulai = None
-if "waktu_selesai" not in st.session_state:
-    st.session_state.waktu_selesai = None
-
-st.set_page_config(page_title="WA Sender Manual", layout="centered")
-st.title("📤 WhatsApp Sender Manual + Countdown Visual")
-
-uploaded_file = st.file_uploader("📁 Upload file kontak (.xlsx atau .txt)", type=["xlsx", "txt"])
-
-template_files = [f for f in os.listdir("templates") if f.endswith(".txt")]
-selected_template_file = st.selectbox("📂 Pilih Template Pesan dari Folder 'templates/'", template_files)
-
-uploaded_template = st.file_uploader("📄 Atau Upload Template Pesan (.txt)", type=["txt"])
-st.info("Gunakan placeholder seperti `{nama}`, `{dari}`, `{produk}` di template.")
-
-if uploaded_file:
-    file_ext = os.path.splitext(uploaded_file.name)[-1].lower()
-
-    if file_ext == ".xlsx":
-        df = pd.read_excel(uploaded_file)
-    elif file_ext == ".txt":
-        lines = uploaded_file.read().decode("utf-8").splitlines()
-        data = [line.strip().split("\t") for line in lines if "\t" in line]
-        df = pd.DataFrame(data, columns=["nama", "nomor"])
-    else:
-        st.error("Format file tidak didukung.")
+        df = pd.read_csv(uploaded_file, sep="\t", header=None, names=["nama", "nomor"], encoding="utf-8")
+        df = df.dropna(subset=["nama", "nomor"])
+        df = df[df["nomor"].astype(str).str.match(r'^62\d{8,}$')].reset_index(drop=True)
+    except Exception as e:
+        st.error(f"Gagal membaca file TXT: {e}")
         st.stop()
 
-    st.session_state.dataframe = df
-    st.success(f"📄 Berhasil membaca {len(df)} kontak dari file.")
+    st.success(f"✅ Berhasil memuat {len(df)} data")
 
-    # Gunakan template dari upload jika ada, kalau tidak dari folder
-    if uploaded_template:
-        st.session_state.template = uploaded_template.read().decode("utf-8")
-    else:
-        template_path = os.path.join("templates", selected_template_file)
-        st.session_state.template = load_template(template_path)
+    if st.button("🚀 Klik untuk Kirim WA"):
+        start_time = time.time()
+        progress_text = "Mengirim pesan..."
+        bar = st.progress(0, text=progress_text)
 
-    st.subheader("📝 Pratinjau Template Pesan")
-    st.code(st.session_state.template)
+        laporan = []
+        for idx, row in df.iterrows():
+            nama = row["nama"]
+            nomor = str(row["nomor"])
+            pesan = template_pesan.replace("[[fullname]]", nama)
 
-    if st.button("🚀 Mulai Kirim Manual"):
-        st.session_state.index_kirim = 0
-        st.session_state.laporan = []
-        st.session_state.waktu_mulai = time.time()
+            # Encode pesan untuk URL
+            encoded_pesan = urllib.parse.quote(pesan)
+            url = f"https://wa.me/{nomor}?text={encoded_pesan}"
 
-    if st.session_state.index_kirim < len(df):
-        i = st.session_state.index_kirim
-        current = df.iloc[i]
-        pesan = generate_pesan(st.session_state.template, current)
-        url = encode_url(current["nomor"], pesan)
+            # Tampilkan info dan tombol kirim WA dengan countdown
+            with st.container():
+                st.markdown(f"**{idx+1}. {nama} - {nomor}**")
+                link_html = f'<a href="{url}" target="_blank"><button style="background-color:#25D366;color:white;padding:6px 16px;border:none;border-radius:6px;">Kirim WA</button></a>'
+                st.markdown(link_html, unsafe_allow_html=True)
+                countdown_placeholder = st.empty()
 
-        st.markdown(f"### ✅ Kirim ke: {current['nama']} ({current['nomor']})")
-        st.text_area("📨 Isi Pesan", pesan, height=150)
-        st.markdown(f"[🌐 Klik untuk kirim WA]({url})")
+                for i in range(5, 0, -1):
+                    countdown_placeholder.markdown(f"<span style='color:gray;'>⌛ Tunggu {i} detik sebelum kirim berikutnya...</span>", unsafe_allow_html=True)
+                    time.sleep(1)
 
-        # Tampilkan waktu berjalan
-        if st.session_state.waktu_mulai:
-            waktu_berjalan = time.time() - st.session_state.waktu_mulai
-            st.markdown(f"⏱️ Waktu Berjalan: **{waktu_berjalan:.2f} detik**")
+                countdown_placeholder.empty()
 
-        st.markdown(f"#### ⏱️ Progres Pengiriman: {i+1}/{len(df)}")
-        st.progress((i + 1) / len(df))
-
-        if st.button("✅ Sudah Terkirim, Lanjutkan"):
-            st.session_state.laporan.append({
-                "nama": current["nama"],
-                "nomor": current["nomor"],
-                "status": "sukses",
-                "pesan": pesan
+            laporan.append({
+                "Nama": nama,
+                "Nomor": nomor,
+                "Pesan": pesan,
+                "Link": url
             })
-            st.session_state.index_kirim += 1
-            tampilkan_countdown(7)
 
-        if st.button("❌ Gagal Terkirim"):
-            st.session_state.laporan.append({
-                "nama": current["nama"],
-                "nomor": current["nomor"],
-                "status": "gagal",
-                "pesan": pesan
-            })
-            st.session_state.index_kirim += 1
-            tampilkan_countdown(7)
+            bar.progress((idx + 1) / len(df), text=f"Mengirim {idx + 1} dari {len(df)}...")
 
-    else:
-        st.session_state.waktu_selesai = time.time()
-        total_durasi = st.session_state.waktu_selesai - st.session_state.waktu_mulai
-        st.success("🎉 Semua pesan telah selesai dikirim!")
-        st.info(f"⏱️ Total waktu yang digunakan: **{total_durasi:.2f} detik**")
+        end_time = time.time()
+        waktu_total = end_time - start_time
+        waktu_durasi = time.strftime("%M menit %S detik", time.gmtime(waktu_total))
 
-        df_lap = pd.DataFrame(st.session_state.laporan)
-        df_sukses = df_lap[df_lap["status"] == "sukses"]
-        df_gagal = df_lap[df_lap["status"] == "gagal"]
-        df_final = pd.concat([df_sukses, df_gagal])
+        # Simpan ke Excel
+        df_laporan = pd.DataFrame(laporan)
+        excel_output = BytesIO()
+        df_laporan.to_excel(excel_output, index=False)
+        excel_output.seek(0)
 
-        jumlah_sukses = len(df_sukses)
-        jumlah_gagal = len(df_gagal)
+        # Simpan waktu ke TXT
+        waktu_log = f"Waktu yang dihabiskan: {waktu_durasi}\nJumlah kontak: {len(df)}\n"
+        txt_output = BytesIO()
+        txt_output.write(waktu_log.encode("utf-8"))
+        txt_output.seek(0)
 
-        header = f"""Laporan Pengiriman Pesan WhatsApp
-Tanggal       : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Durasi        : {total_durasi:.2f} detik
-Jumlah sukses : {jumlah_sukses}
-Jumlah gagal  : {jumlah_gagal}
+        st.success("✅ Semua pesan berhasil diproses!")
+        st.markdown(f"🕒 **Waktu total:** {waktu_durasi}")
 
-== Detail Pengiriman ==
-"""
-
-        isi = "\n".join([f"{r['nomor']} - {r['nama']} - {r['status']}" for _, r in df_final.iterrows()])
-        laporan_txt = header + isi
-
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = os.path.splitext(uploaded_file.name)[0]
-
-        st.download_button(
-            "📥 Unduh Laporan Akhir (TXT)",
-            laporan_txt,
-            file_name=f"laporan_{base_name}_{now}.txt",
-            mime="text/plain"
-        )
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button("📥 Unduh Laporan Excel", data=excel_output, file_name="laporan_wa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with col2:
+            st.download_button("📥 Unduh Log Waktu", data=txt_output, file_name="waktu_pengiriman.txt", mime="text/plain")
