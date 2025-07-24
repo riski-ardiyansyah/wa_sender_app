@@ -4,7 +4,7 @@ import os
 from urllib.parse import quote
 
 # Folder template
-TEMPLATE_FOLDER = "template"
+TEMPLATE_FOLDER = "templates"
 
 # Pilih file template
 template_files = os.listdir(TEMPLATE_FOLDER)
