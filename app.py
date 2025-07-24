@@ -30,10 +30,11 @@ def generate_pesan(template, data_row):
 def encode_url(nomor, pesan):
     return f"https://wa.me/{nomor}?text={quote(pesan)}"
 
-def tampilkan_countup(seconds):
+def tampilkan_countdown(seconds):
     countdown_placeholder = st.empty()
     progress = st.progress(0)
     for i in range(seconds):
+        percent = int((i + 1) / seconds * 100)
         countdown_placeholder.markdown(
             f"""
             <div style='text-align:center;'>
@@ -108,6 +109,12 @@ if uploaded_file:
         pesan = generate_pesan(st.session_state.template, current)
         url = encode_url(current["nomor"], pesan)
 
+        elapsed_time = int(time.time() - st.session_state.start_time) if st.session_state.start_time else 0
+        st.markdown(
+            f"<h4 style='text-align:center; color:#2980b9;'>🕒 Waktu Berjalan: {elapsed_time} detik</h4>",
+            unsafe_allow_html=True
+        )
+
         st.markdown(f"### ✅ Kirim ke: {current['nama']} ({current['nomor']})")
         st.text_area("📨 Isi Pesan", pesan, height=150)
         st.markdown(f"[🌐 Klik untuk kirim WA]({url})")
@@ -123,7 +130,7 @@ if uploaded_file:
                 "pesan": pesan
             })
             st.session_state.index_kirim += 1
-            tampilkan_countup(7)
+            tampilkan_countdown(7)
 
         if st.button("❌ Gagal Terkirim"):
             st.session_state.laporan.append({
@@ -133,40 +140,35 @@ if uploaded_file:
                 "pesan": pesan
             })
             st.session_state.index_kirim += 1
-            tampilkan_countup(7)
+            tampilkan_countdown(7)
 
     else:
         st.success("🎉 Semua pesan telah selesai dikirim!")
+        df_lap = pd.DataFrame(st.session_state.laporan)
+        df_sukses = df_lap[df_lap["status"] == "sukses"]
+        df_gagal = df_lap[df_lap["status"] == "gagal"]
+        df_final = pd.concat([df_sukses, df_gagal])
 
-        if st.session_state.laporan:
-            df_lap = pd.DataFrame(st.session_state.laporan)
+        jumlah_sukses = len(df_sukses)
+        jumlah_gagal = len(df_gagal)
 
-            df_sukses = df_lap[df_lap.get("status") == "sukses"] if "status" in df_lap else pd.DataFrame()
-            df_gagal = df_lap[df_lap.get("status") == "gagal"] if "status" in df_lap else pd.DataFrame()
-            df_final = pd.concat([df_sukses, df_gagal])
+        waktu_berjalan = time.time() - st.session_state.start_time if st.session_state.start_time else 0
+        menit = int(waktu_berjalan // 60)
+        detik = int(waktu_berjalan % 60)
+        waktu_format = f"{menit} menit {detik} detik"
 
-            jumlah_sukses = len(df_sukses)
-            jumlah_gagal = len(df_gagal)
+        st.markdown(f"🕒 **Total waktu berjalan:** {waktu_format}")
 
-            waktu_berjalan = time.time() - st.session_state.start_time if st.session_state.start_time else 0
-            menit = int(waktu_berjalan // 60)
-            detik = int(waktu_berjalan % 60)
-            waktu_format = f"{menit} menit {detik} detik"
+        header = f"Jumlah pesan sukses = {jumlah_sukses}\nJumlah pesan gagal = {jumlah_gagal}\nTotal waktu berjalan = {waktu_format}\n\n"
+        isi = "\n".join([f"{r['nomor']} - {r['nama']} - {r['status']}" for _, r in df_final.iterrows()])
+        laporan_txt = header + isi
 
-            header = f"Jumlah pesan sukses = {jumlah_sukses}\nJumlah pesan gagal = {jumlah_gagal}\nTotal waktu berjalan = {waktu_format}\n\n"
-            isi = "\n".join([f"{r['nomor']} - {r['nama']} - {r['status']}" for _, r in df_final.iterrows()])
-            laporan_txt = header + isi
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = os.path.splitext(uploaded_file.name)[0]
 
-            now = datetime.now().strftime("%Y%m%d_%H%M%S")
-            base_name = os.path.splitext(uploaded_file.name)[0]
-
-            st.markdown(f"🕒 **Total waktu berjalan:** {waktu_format}")
-
-            st.download_button(
-                "📥 Unduh Laporan Akhir (TXT)",
-                laporan_txt,
-                file_name=f"laporan_{base_name}_{now}.txt",
-                mime="text/plain"
-            )
-        else:
-            st.warning("⚠️ Belum ada data pengiriman yang diproses. Tekan tombol kirim terlebih dahulu.")
+        st.download_button(
+            "📥 Unduh Laporan Akhir (TXT)",
+            laporan_txt,
+            file_name=f"laporan_{base_name}_{now}.txt",
+            mime="text/plain"
+        )
