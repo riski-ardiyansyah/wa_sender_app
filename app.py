@@ -9,7 +9,7 @@ st.set_page_config(layout="centered")
 
 # --- Fungsi utilitas ---
 def load_template_files():
-    folder = 'template'
+    folder = 'templates'
     return [f for f in os.listdir(folder) if f.endswith('.txt')]
 
 def read_template(file_name):
